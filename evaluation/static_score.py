@@ -1,6 +1,5 @@
 import json
-import pandas as pd
-from prettytable import PrettyTable
+import argparse
 
 type_list = {
     'SB': [
@@ -55,18 +54,20 @@ if __name__ == '__main__':
     score = {}
     data = json.load(open(args.answer))
     for d in data:
-        flag = 0 
+        # 只统计有 multi_granularity_score 的条目
+        if d.get('multi_granularity_score') is None:
+            continue
+        flag = 0
         dimensions = d['dimensions'].replace('_', ' ').replace("['", '').replace("']", '')
         for key_ in type_list.keys():
-                if dimensions in type_list[key_]:
+            if dimensions in type_list[key_]:
                 flag = 1
                 if key_ not in sum:
                     sum[key_] = 0
                     num[key_] = 0
-                
-                sum[key_]+=d['multi_granularity_score']
-               
-                num[key_]+=1
+
+                sum[key_] += d['multi_granularity_score']
+                num[key_] += 1
             
     nums = 0
     sums = 0
@@ -75,12 +76,8 @@ if __name__ == '__main__':
         nums+=num[key_]
         sums+=sum[key_]
         
-    table = PrettyTable()
-    table.field_names = ["Category", "Value"]
-
+    print(f"{'Category':<20} {'Value':>8}")
+    print("-" * 30)
     for category, value in score.items():
-        table.add_row([category, f"{value*100:.2f}"])
-
-    table.add_row(['Overall Mean', f"{sums/nums*100:.2f}"])
-
-    print(table)
+        print(f"{category:<20} {value*100:>7.2f}")
+    print(f"{'Overall Mean':<20} {sums/nums*100:>7.2f}")

@@ -1,20 +1,28 @@
-from openai import OpenAI, AzureOpenAI, APIError
-import base64
-from mimetypes import guess_type
+from openai import OpenAI
 import json
 import os
 import argparse
 from tqdm import tqdm
 
 
-gpt_endpoint = os.environ.get('GPT_ENDPOINT')
-gpt_key = os.environ.get('GPT_KEY')
+def save_json_atomic(path: str, data: list) -> None:
+    """原子写入：先写临时文件，再重命名，避免写入中断导致文件损坏"""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
 
-client = AzureOpenAI(
-            azure_endpoint = gpt_endpoint, 
-            api_key=gpt_key,  
-            api_version="2024-02-15-preview"
-            )
+
+def build_client():
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not set")
+    base_url = os.environ.get('OPENAI_BASE_URL')
+    if base_url:
+        return OpenAI(api_key=api_key, base_url=base_url)
+    return OpenAI(api_key=api_key)
 
 
 def make_prompt(question, label_answer, pred_answer):
@@ -100,20 +108,28 @@ def make_prompt_multi_granularity(question, label_answer, half_label_answer, pre
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluation', formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--answer', default='output.json')  
-    args = parser.parse_args()  
-    
-    answer_file = json.load(open(args.answer))
+    parser.add_argument('--answer', default='output.json')
+    parser.add_argument('--model', default=os.environ.get('OPENAI_MODEL', 'gpt-4o'))
+    parser.add_argument('--save-every', type=int, default=20, help='每处理 N 条保存一次，减少写入频率')
+    args = parser.parse_args()
+    client = build_client()
 
+    with open(args.answer, 'r', encoding='utf-8') as f:
+        answer_file = json.load(f)
+
+    scored_count = 0
     for item in tqdm(answer_file):
+        # 跳过已有 score 的条目
         if item.get('multi_granularity_score') is not None:
-            print('skip')
+            continue
+        # 跳过 pred_answer 为空的条目
+        pred_answer = item.get('pred_answer')
+        if not (isinstance(pred_answer, str) and pred_answer.strip()):
             continue
 
         question = item['question_en_v2.2']
         label_answer = item['answer_en_v2.2']
         half_label_answer = item['Partially correct answer']
-        pred_answer =  item['pred_answer']
         if half_label_answer == 0:
             messages = make_prompt(question, label_answer, pred_answer)            
         elif type(half_label_answer) == str:
@@ -121,7 +137,7 @@ if __name__ == '__main__':
 
         try:
             completion = client.chat.completions.create(
-                model='gpt4o-0513',
+                model=args.model,
                 messages=messages,
                 max_tokens=100,
             )
@@ -136,11 +152,12 @@ if __name__ == '__main__':
             elif type(half_label_answer) == str:
                 item['multi_granularity_score'] = float(int(response) / 5)
 
-        except:
+        except Exception:
             item['multi_granularity_score'] = 0
 
-    
-        with open(args.answer, 'w') as f:
-            json.dump(answer_file, f, indent=4, ensure_ascii=False)
+        scored_count += 1
+        if scored_count % args.save_every == 0:
+            save_json_atomic(args.answer, answer_file)
 
-       
+    save_json_atomic(args.answer, answer_file)
+

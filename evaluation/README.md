@@ -39,10 +39,12 @@ You are moving in an indoor environment. The image sequence is the scene you jus
 
 ## Setup Environment Variables:
 
-Before running the evaluation script, you must set the following environment variables for GPT evaluation:
+Before running the evaluation script, set the following environment variables for OpenAI API evaluation:
 ```
-export GPT_ENDPOINT="your_endpoint_here"
-export GPT_KEY="your_key_here"
+export OPENAI_API_KEY="your_openai_api_key"
+# Optional:
+export OPENAI_MODEL="gpt-4o"
+export OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
 ## Run the Evaluation Script:
